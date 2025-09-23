@@ -1,254 +1,334 @@
 """
-Módulo del entorno de ajedrez para agentes IA.
-Configura y maneja el entorno de PettingZoo Chess.
+Módulo para envolver el entorno de ajedrez de PettingZoo.
+
+Este módulo proporciona una interfaz unificada para que tanto agentes de 
+búsqueda como de aprendizaje por refuerzo puedan interactuar con el 
+entorno de ajedrez de PettingZoo.
 """
 
-import numpy as np
-import gymnasium as gym
-from pettingzoo.classic import chess_v6
-import chess
 import logging
+import numpy as np
+import pettingzoo.classic.chess_v6 as chess_v6
+from typing import Optional, Tuple, Dict, Any
 
+# Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class EntornoAjedrez:
     """
-    Wrapper para el entorno de ajedrez de PettingZoo.
-    Proporciona interfaz unificada para agentes RL y de búsqueda.
+    Envuelve el entorno de ajedrez de PettingZoo para una interfaz unificada.
+    
+    Esta clase proporciona métodos estándar que pueden ser utilizados tanto
+    por agentes de búsqueda (Minimax, MCTS) como por agentes de RL (DQN, PPO).
     """
     
-    def __init__(self, render_mode=None):
+    def __init__(self, render_mode: Optional[str] = None):
         """
         Inicializa el entorno de ajedrez.
         
         Args:
-            render_mode: Modo de renderizado ('human', 'ansi', None)
+            render_mode: Modo de renderizado ('human', 'rgb_array', None)
         """
-        self.env = chess_v6.env(render_mode=render_mode)
-        self.observation_space = self.env.observation_space
-        self.action_space = self.env.action_space
-        self.agents = self.env.agents
-        self.current_agent = None
-        self.board = None
-        self.game_over = False
+        self.render_mode = render_mode
+        self.env = None
+        self.agentes = None
+        self.agente_actual = None
+        self.observacion_actual = None
+        self.recompensa_actual = None
+        self.terminado = False
+        self.info_actual = None
+        self.historial_jugadas = []
         
-    def reiniciar(self):
+        logger.info("EntornoAjedrez inicializado")
+    
+    def reiniciar(self) -> np.ndarray:
         """
-        Reinicia el entorno para una nueva partida.
+        Reinicia el entorno de ajedrez.
         
         Returns:
-            tuple: (observaciones, info) para el primer agente
+            Observación inicial del primer jugador
         """
-        observations, infos = self.env.reset()
-        self.current_agent = self.env.agent_selection
-        self.game_over = False
-        
-        # Obtener el tablero actual
-        if hasattr(self.env.unwrapped, 'board'):
-            self.board = self.env.unwrapped.board
-        else:
-            self.board = chess.Board()
+        try:
+            # Crear nuevo entorno
+            self.env = chess_v6.env(render_mode=self.render_mode)
+            self.env.reset()
             
-        logger.info("Partida reiniciada")
-        return observations, infos
+            # Obtener lista de agentes
+            self.agentes = self.env.agents
+            self.agente_actual = self.agentes[0]  # Comenzar con blancas
+            
+            # Obtener observación inicial
+            self.observacion_actual, self.recompensa_actual, \
+            self.terminado, truncado, self.info_actual = self.env.last()
+            
+            # Limpiar historial
+            self.historial_jugadas = []
+            
+            logger.info("Entorno reiniciado - Inicia jugador: %s", self.agente_actual)
+            
+            return self._normalizar_observacion(self.observacion_actual)
+            
+        except Exception as e:
+            logger.error("Error al reiniciar el entorno: %s", str(e))
+            raise
     
-    def paso(self, accion):
+    def paso(self, accion: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """
-        Ejecuta un paso en el entorno.
+        Ejecuta una acción en el entorno.
         
         Args:
-            accion: Acción a ejecutar
+            accion: Acción a ejecutar (índice de movimiento)
             
         Returns:
-            tuple: (observacion, recompensa, terminado, truncado, info)
+            Tupla con (observación, recompensa, terminado, info)
         """
-        if self.game_over:
-            logger.warning("Intentando ejecutar acción en juego terminado")
-            return None, 0, True, False, {}
-            
-        # Ejecutar la acción
-        self.env.step(accion)
-        
-        # Obtener el estado después del paso
-        observacion = self.env.observe(self.env.agent_selection)
-        recompensa = self.env.rewards.get(self.current_agent, 0)
-        terminado = self.env.terminations.get(self.env.agent_selection, False)
-        truncado = self.env.truncations.get(self.env.agent_selection, False)
-        
-        # Actualizar el agente actual
-        self.current_agent = self.env.agent_selection
-        
-        # Actualizar el tablero
-        if hasattr(self.env.unwrapped, 'board'):
-            self.board = self.env.unwrapped.board
-            
-        # Verificar si el juego terminó
-        self.game_over = terminado or truncado or not self.env.agents
-        
-        info = {
-            'agente_actual': self.current_agent,
-            'movimientos_legales': self.obtener_movimientos_legales(),
-            'juego_terminado': self.game_over
-        }
-        
-        return observacion, recompensa, terminado, truncado, info
-    
-    def obtener_movimientos_legales(self):
-        """
-        Obtiene los movimientos legales disponibles.
-        
-        Returns:
-            list: Lista de movimientos legales
-        """
-        if self.board is None:
-            return []
-            
         try:
+            if self.env is None:
+                raise ValueError("El entorno no ha sido inicializado. Llamar reiniciar() primero.")
+            
+            if self.terminado:
+                logger.warning("Intento de ejecutar acción en entorno terminado")
+                return self.observacion_actual, 0.0, True, self.info_actual
+            
+            # Ejecutar acción
+            self.env.step(accion)
+            
+            # Obtener nueva observación
+            self.observacion_actual, self.recompensa_actual, \
+            self.terminado, truncado, self.info_actual = self.env.last()
+            
+            # Registrar jugada
+            self.historial_jugadas.append({
+                'agente': self.agente_actual,
+                'accion': accion,
+                'recompensa': self.recompensa_actual
+            })
+            
+            # Cambiar al siguiente agente si no ha terminado
+            if not self.terminado and not truncado:
+                idx_actual = self.agentes.index(self.agente_actual)
+                self.agente_actual = self.agentes[(idx_actual + 1) % len(self.agentes)]
+            
+            logger.debug("Paso ejecutado - Acción: %d, Recompensa: %.2f, Terminado: %s", 
+                        accion, self.recompensa_actual, self.terminado)
+            
+            return (
+                self._normalizar_observacion(self.observacion_actual),
+                self._normalizar_recompensa(self.recompensa_actual),
+                self.terminado or truncado,
+                self.info_actual
+            )
+            
+        except Exception as e:
+            logger.error("Error en paso del entorno: %s", str(e))
+            raise
+    
+    def obtener_acciones_legales(self) -> np.ndarray:
+        """
+        Obtiene las acciones legales para el jugador actual.
+        
+        Returns:
+            Array con las acciones legales disponibles
+        """
+        try:
+            if self.env is None or self.terminado:
+                return np.array([])
+            
             # Obtener máscara de acciones legales
-            mask = self.env.action_mask(self.env.agent_selection)
-            movimientos_legales = [i for i, legal in enumerate(mask) if legal]
-            return movimientos_legales
+            mascara_acciones = self.info_actual.get('action_mask', None)
+            if mascara_acciones is not None:
+                acciones_legales = np.where(mascara_acciones)[0]
+            else:
+                # Fallback: todas las acciones posibles
+                # Verificar si action_space es una función o tiene el atributo n
+                if hasattr(self.env.action_space, 'n'):
+                    num_acciones = self.env.action_space.n
+                elif callable(self.env.action_space):
+                    # Si es una función, llamarla para obtener el espacio con el agente actual
+                    if self.agente_actual:
+                        action_space = self.env.action_space(self.agente_actual)
+                    else:
+                        # Si no hay agente actual, usar el primer agente disponible
+                        action_space = self.env.action_space(self.agentes[0] if self.agentes else 'player_0')
+                    num_acciones = action_space.n if hasattr(action_space, 'n') else 4096  # Default para chess
+                else:
+                    # Default para ajedrez (chess_v6 típicamente tiene 4096 acciones)
+                    num_acciones = 4096
+                acciones_legales = np.arange(num_acciones)
+            
+            return acciones_legales
+            
         except Exception as e:
-            logger.error(f"Error obteniendo movimientos legales: {e}")
-            return []
+            logger.error("Error al obtener acciones legales: %s", str(e))
+            return np.array([])
     
-    def obtener_observacion(self, agente=None):
+    def renderizar(self) -> Optional[np.ndarray]:
         """
-        Obtiene la observación actual para un agente.
+        Renderiza el estado actual del entorno.
         
-        Args:
-            agente: Nombre del agente (si None, usa el agente actual)
-            
         Returns:
-            np.array: Observación del estado actual
+            Array de imagen si render_mode='rgb_array', None en caso contrario
         """
-        if agente is None:
-            agente = self.env.agent_selection
+        try:
+            if self.env is not None:
+                return self.env.render()
+            return None
             
-        try:
-            return self.env.observe(agente)
         except Exception as e:
-            logger.error(f"Error obteniendo observación: {e}")
-            return np.zeros(self.observation_space.shape)
-    
-    def renderizar(self):
-        """Renderiza el estado actual del juego."""
-        try:
-            return self.env.render()
-        except Exception as e:
-            logger.error(f"Error renderizando: {e}")
-            if self.board:
-                print(self.board)
+            logger.error("Error al renderizar: %s", str(e))
+            return None
     
     def cerrar(self):
-        """Cierra el entorno."""
+        """Cierra el entorno y libera recursos."""
         try:
-            self.env.close()
-            logger.info("Entorno cerrado correctamente")
+            if self.env is not None:
+                self.env.close()
+                self.env = None
+                logger.info("Entorno cerrado")
+                
         except Exception as e:
-            logger.error(f"Error cerrando entorno: {e}")
+            logger.error("Error al cerrar entorno: %s", str(e))
     
-    def obtener_estado_juego(self):
+    def _normalizar_observacion(self, observacion) -> np.ndarray:
         """
-        Obtiene el estado actual del juego.
+        Normaliza la observación para mejorar el entrenamiento.
+        
+        Args:
+            observacion: Observación raw del entorno (puede ser dict o array)
+            
+        Returns:
+            Observación normalizada
+        """
+        if observacion is None:
+            return np.zeros((8, 8, 111))  # Tamaño estándar para chess_v6
+        
+        # Manejar diferentes tipos de observación
+        if isinstance(observacion, dict):
+            # Si es un diccionario, buscar la observación principal
+            if 'observation' in observacion:
+                obs_array = observacion['observation']
+            elif 'obs' in observacion:
+                obs_array = observacion['obs']
+            else:
+                # Si no hay una clave estándar, tomar la primera entrada que sea un array
+                for key, value in observacion.items():
+                    if isinstance(value, np.ndarray):
+                        obs_array = value
+                        break
+                else:
+                    # Si no encontramos un array, crear uno por defecto
+                    logger.warning("No se encontró observación válida en el diccionario, usando observación por defecto")
+                    return np.zeros((8, 8, 111))
+        else:
+            # Si ya es un array, usarlo directamente
+            obs_array = observacion
+        
+        # Asegurar que sea un array de NumPy
+        if not isinstance(obs_array, np.ndarray):
+            obs_array = np.array(obs_array)
+        
+        # La observación ya viene normalizada en chess_v6
+        return obs_array.astype(np.float32)
+    
+    def _normalizar_recompensa(self, recompensa: float) -> float:
+        """
+        Normaliza la recompensa.
+        
+        Args:
+            recompensa: Recompensa raw del entorno
+            
+        Returns:
+            Recompensa normalizada
+        """
+        # Las recompensas en chess_v5 ya están en rango [-1, 1]
+        return float(recompensa)
+    
+    @property
+    def espacio_observacion(self):
+        """Retorna el espacio de observación del entorno."""
+        if self.env is not None:
+            if hasattr(self.env, 'observation_space'):
+                if callable(self.env.observation_space):
+                    # Usar el agente actual o el primer agente disponible
+                    agente = self.agente_actual if self.agente_actual else (self.agentes[0] if self.agentes else 'player_0')
+                    return self.env.observation_space(agente)
+                else:
+                    return self.env.observation_space
+        return None
+    
+    @property
+    def espacio_accion(self):
+        """Retorna el espacio de acción del entorno."""
+        if self.env is not None:
+            if hasattr(self.env, 'action_space'):
+                if callable(self.env.action_space):
+                    # Usar el agente actual o el primer agente disponible
+                    agente = self.agente_actual if self.agente_actual else (self.agentes[0] if self.agentes else 'player_0')
+                    return self.env.action_space(agente)
+                else:
+                    return self.env.action_space
+        return None
+    
+    @property
+    def es_terminado(self) -> bool:
+        """Retorna True si el entorno ha terminado."""
+        return self.terminado
+    
+    @property
+    def jugador_actual(self) -> str:
+        """Retorna el identificador del jugador actual."""
+        return self.agente_actual
+    
+    def obtener_resultado(self) -> Dict[str, Any]:
+        """
+        Obtiene el resultado final del juego.
         
         Returns:
-            dict: Diccionario con información del estado
+            Diccionario con información del resultado
         """
-        estado = {
-            'agente_actual': self.current_agent,
-            'juego_terminado': self.game_over,
-            'tablero': str(self.board) if self.board else None,
-            'turno_blancas': self.board.turn if self.board else True,
-            'en_jaque': self.board.is_check() if self.board else False,
-            'jaque_mate': self.board.is_checkmate() if self.board else False,
-            'empate': self.board.is_stalemate() if self.board else False
+        if not self.terminado:
+            return {
+                'estado': 'en_progreso',
+                'ganador': None,
+                'tipo_fin': 'en_progreso',
+                'total_jugadas': len(self.historial_jugadas)
+            }
+        
+        # Determinar ganador basado en las recompensas finales
+        resultado = {
+            'estado': 'terminado',
+            'ganador': None,
+            'tipo_fin': 'desconocido',
+            'total_jugadas': len(self.historial_jugadas)
         }
-        return estado
-    
-    def es_movimiento_legal(self, accion):
-        """
-        Verifica si una acción es legal.
         
-        Args:
-            accion: Acción a verificar
-            
+        if self.recompensa_actual == 1:
+            resultado['ganador'] = self.agente_actual
+            resultado['tipo_fin'] = 'victoria'
+        elif self.recompensa_actual == -1:
+            # El oponente ganó
+            idx_actual = self.agentes.index(self.agente_actual)
+            resultado['ganador'] = self.agentes[(idx_actual + 1) % len(self.agentes)]
+            resultado['tipo_fin'] = 'derrota'
+        else:
+            resultado['tipo_fin'] = 'empate'
+        
+        return resultado
+    
+    def obtener_estado_tablero(self) -> str:
+        """
+        Obtiene representación en string del estado del tablero.
+        
         Returns:
-            bool: True si la acción es legal
+            String representando el estado del tablero
         """
         try:
-            mask = self.env.action_mask(self.env.agent_selection)
-            return mask[accion] if accion < len(mask) else False
+            if hasattr(self.env, 'board'):
+                return str(self.env.board)
+            return "Estado del tablero no disponible"
+            
         except Exception as e:
-            logger.error(f"Error verificando legalidad: {e}")
-            return False
-    
-    def obtener_recompensa_actual(self, agente=None):
-        """
-        Obtiene la recompensa actual para un agente.
-        
-        Args:
-            agente: Nombre del agente
-            
-        Returns:
-            float: Recompensa actual
-        """
-        if agente is None:
-            agente = self.current_agent
-            
-        return self.env.rewards.get(agente, 0)
-    
-    def copiar_tablero(self):
-        """
-        Crea una copia del tablero actual.
-        
-        Returns:
-            chess.Board: Copia del tablero
-        """
-        if self.board:
-            return self.board.copy()
-        return chess.Board()
-
-
-def crear_entorno_vectorizado(num_envs=1, render_mode=None):
-    """
-    Crea múltiples entornos vectorizados para entrenamiento paralelo.
-    
-    Args:
-        num_envs: Número de entornos
-        render_mode: Modo de renderizado
-        
-    Returns:
-        VecEnv: Entorno vectorizado
-    """
-    def make_env():
-        def _init():
-            return EntornoAjedrez(render_mode=render_mode)
-        return _init
-    
-    # Para stable-baselines3, necesitamos un wrapper específico
-    from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-    
-    if num_envs == 1:
-        return DummyVecEnv([make_env()])
-    else:
-        return SubprocVecEnv([make_env() for _ in range(num_envs)])
-
-
-if __name__ == "__main__":
-    # Prueba básica del entorno
-    print("Probando entorno de ajedrez...")
-    
-    entorno = EntornoAjedrez(render_mode="ansi")
-    obs, info = entorno.reiniciar()
-    
-    print("Estado inicial:")
-    entorno.renderizar()
-    
-    print(f"Agente actual: {entorno.current_agent}")
-    print(f"Movimientos legales disponibles: {len(entorno.obtener_movimientos_legales())}")
-    
-    entorno.cerrar()
-    print("Prueba completada")
+            logger.error("Error al obtener estado del tablero: %s", str(e))
+            return "Error al obtener estado"

@@ -1,20 +1,28 @@
 """
-Agente de ajedrez basado en Minimax con poda alfa-beta.
+Agente Minimax con poda alfa-beta para ajedrez.
+
+Este módulo implementa un agente que utiliza el algoritmo Minimax con 
+poda alfa-beta para evaluar posiciones y seleccionar las mejores jugadas.
 """
 
+import logging
+import time
+import numpy as np
 import chess
 import chess.engine
-import numpy as np
-import time
-import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class AgenteMinimax:
     """
-    Agente de ajedrez que usa el algoritmo Minimax con poda alfa-beta.
+    Agente que utiliza Minimax con poda alfa-beta para jugar ajedrez.
+    
+    Este agente evalúa posiciones utilizando una función de evaluación
+    heurística y busca la mejor jugada usando el algoritmo Minimax.
     """
     
     def __init__(self, profundidad_maxima: int = 3, tiempo_limite: float = 5.0):
@@ -23,15 +31,20 @@ class AgenteMinimax:
         
         Args:
             profundidad_maxima: Profundidad máxima de búsqueda
-            tiempo_limite: Tiempo límite por jugada en segundos
+            tiempo_limite: Tiempo límite en segundos para cada jugada
         """
         self.profundidad_maxima = profundidad_maxima
         self.tiempo_limite = tiempo_limite
-        self.nombre = f"Minimax_Prof{profundidad_maxima}"
-        self.nodos_evaluados = 0
-        self.tiempo_inicio = 0
+        self.nombre = "Minimax"
+        self.estadisticas = {
+            'nodos_evaluados': 0,
+            'podas_alfa': 0,
+            'podas_beta': 0,
+            'tiempo_total': 0.0,
+            'jugadas_realizadas': 0
+        }
         
-        # Valores de las piezas para evaluación
+        # Valores de las piezas
         self.valores_piezas = {
             chess.PAWN: 100,
             chess.KNIGHT: 320,
@@ -41,41 +54,179 @@ class AgenteMinimax:
             chess.KING: 20000
         }
         
-        # Tablas de posición para bonificaciones posicionales
-        self.tabla_peones = [
-            0,  0,  0,  0,  0,  0,  0,  0,
-            50, 50, 50, 50, 50, 50, 50, 50,
-            10, 10, 20, 30, 30, 20, 10, 10,
-            5,  5, 10, 25, 25, 10,  5,  5,
-            0,  0,  0, 20, 20,  0,  0,  0,
-            5, -5,-10,  0,  0,-10, -5,  5,
-            5, 10, 10,-20,-20, 10, 10,  5,
-            0,  0,  0,  0,  0,  0,  0,  0
-        ]
+        # Tablas de posición para piezas (simplified)
+        self.tabla_peones = np.array([
+            [0,  0,  0,  0,  0,  0,  0,  0],
+            [50, 50, 50, 50, 50, 50, 50, 50],
+            [10, 10, 20, 30, 30, 20, 10, 10],
+            [5,  5, 10, 25, 25, 10,  5,  5],
+            [0,  0,  0, 20, 20,  0,  0,  0],
+            [5, -5,-10,  0,  0,-10, -5,  5],
+            [5, 10, 10,-20,-20, 10, 10,  5],
+            [0,  0,  0,  0,  0,  0,  0,  0]
+        ])
         
-        self.tabla_caballos = [
-            -50,-40,-30,-30,-30,-30,-40,-50,
-            -40,-20,  0,  0,  0,  0,-20,-40,
-            -30,  0, 10, 15, 15, 10,  0,-30,
-            -30,  5, 15, 20, 20, 15,  5,-30,
-            -30,  0, 15, 20, 20, 15,  0,-30,
-            -30,  5, 10, 15, 15, 10,  5,-30,
-            -40,-20,  0,  5,  5,  0,-20,-40,
-            -50,-40,-30,-30,-30,-30,-40,-50
-        ]
+        self.tabla_caballos = np.array([
+            [-50,-40,-30,-30,-30,-30,-40,-50],
+            [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30],
+            [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30],
+            [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40],
+            [-50,-40,-30,-30,-30,-30,-40,-50]
+        ])
+        
+        logger.info("Agente Minimax inicializado - Profundidad: %d, Tiempo límite: %.1fs", 
+                   profundidad_maxima, tiempo_limite)
     
-    def evaluar_tablero(self, tablero: chess.Board) -> float:
+    def seleccionar_accion(self, observacion: np.ndarray, acciones_legales: np.ndarray, 
+                          info: Dict[str, Any]) -> int:
         """
-        Evalúa la posición del tablero desde la perspectiva de las blancas.
+        Selecciona la mejor acción usando Minimax con poda alfa-beta.
+        
+        Args:
+            observacion: Estado actual del juego
+            acciones_legales: Acciones legales disponibles
+            info: Información adicional del entorno
+            
+        Returns:
+            Índice de la acción seleccionada
+        """
+        inicio_tiempo = time.time()
+        
+        try:
+            # Resetear estadísticas para esta jugada
+            self.estadisticas['nodos_evaluados'] = 0
+            self.estadisticas['podas_alfa'] = 0
+            self.estadisticas['podas_beta'] = 0
+            
+            if len(acciones_legales) == 0:
+                logger.warning("No hay acciones legales disponibles")
+                return 0
+            
+            if len(acciones_legales) == 1:
+                logger.info("Solo una acción legal disponible")
+                return acciones_legales[0]
+            
+            # Obtener tablero actual desde info si está disponible
+            tablero = self._obtener_tablero_desde_info(info)
+            if tablero is None:
+                # Fallback: selección aleatoria
+                logger.warning("No se pudo obtener estado del tablero, selección aleatoria")
+                return np.random.choice(acciones_legales)
+            
+            mejor_accion = None
+            mejor_valor = float('-inf')
+            
+            # Evaluar cada acción legal
+            for accion in acciones_legales:
+                # Convertir acción a movimiento si es posible
+                movimiento = self._accion_a_movimiento(accion, tablero)
+                if movimiento is None:
+                    continue
+                
+                # Hacer movimiento temporal
+                tablero.push(movimiento)
+                
+                # Evaluar posición resultante
+                valor = self._minimax(tablero, self.profundidad_maxima - 1, 
+                                    float('-inf'), float('inf'), False, inicio_tiempo)
+                
+                # Deshacer movimiento
+                tablero.pop()
+                
+                if valor > mejor_valor:
+                    mejor_valor = valor
+                    mejor_accion = accion
+                
+                # Verificar tiempo límite
+                if time.time() - inicio_tiempo > self.tiempo_limite:
+                    logger.warning("Tiempo límite alcanzado en selección de acción")
+                    break
+            
+            tiempo_jugada = time.time() - inicio_tiempo
+            self.estadisticas['tiempo_total'] += tiempo_jugada
+            self.estadisticas['jugadas_realizadas'] += 1
+            
+            logger.debug("Minimax - Mejor acción: %s, Valor: %.2f, Nodos: %d, Tiempo: %.3fs",
+                        mejor_accion, mejor_valor, self.estadisticas['nodos_evaluados'], tiempo_jugada)
+            
+            return mejor_accion if mejor_accion is not None else acciones_legales[0]
+            
+        except Exception as e:
+            logger.error("Error en selección de acción Minimax: %s", str(e))
+            return np.random.choice(acciones_legales)
+    
+    def _minimax(self, tablero: chess.Board, profundidad: int, alfa: float, beta: float, 
+                maximizar: bool, inicio_tiempo: float) -> float:
+        """
+        Implementación del algoritmo Minimax con poda alfa-beta.
+        
+        Args:
+            tablero: Estado actual del tablero
+            profundidad: Profundidad restante de búsqueda
+            alfa: Valor alfa para poda
+            beta: Valor beta para poda
+            maximizar: True si es turno del maximizador
+            inicio_tiempo: Tiempo de inicio para control de tiempo
+            
+        Returns:
+            Valor de evaluación de la posición
+        """
+        self.estadisticas['nodos_evaluados'] += 1
+        
+        # Verificar tiempo límite
+        if time.time() - inicio_tiempo > self.tiempo_limite:
+            return self._evaluar_posicion(tablero)
+        
+        # Condiciones de terminación
+        if profundidad == 0 or tablero.is_game_over():
+            return self._evaluar_posicion(tablero)
+        
+        if maximizar:
+            max_eval = float('-inf')
+            for movimiento in tablero.legal_moves:
+                tablero.push(movimiento)
+                eval_val = self._minimax(tablero, profundidad - 1, alfa, beta, False, inicio_tiempo)
+                tablero.pop()
+                
+                max_eval = max(max_eval, eval_val)
+                alfa = max(alfa, eval_val)
+                
+                if beta <= alfa:
+                    self.estadisticas['podas_beta'] += 1
+                    break  # Poda beta
+                    
+            return max_eval
+        else:
+            min_eval = float('inf')
+            for movimiento in tablero.legal_moves:
+                tablero.push(movimiento)
+                eval_val = self._minimax(tablero, profundidad - 1, alfa, beta, True, inicio_tiempo)
+                tablero.pop()
+                
+                min_eval = min(min_eval, eval_val)
+                beta = min(beta, eval_val)
+                
+                if beta <= alfa:
+                    self.estadisticas['podas_alfa'] += 1
+                    break  # Poda alfa
+                    
+            return min_eval
+    
+    def _evaluar_posicion(self, tablero: chess.Board) -> float:
+        """
+        Evalúa la posición actual del tablero.
         
         Args:
             tablero: Estado del tablero a evaluar
             
         Returns:
-            float: Puntuación de la posición (positiva para blancas)
+            Valor de evaluación (positivo favorable a blancas)
         """
         if tablero.is_checkmate():
-            return -999999 if tablero.turn else 999999
+            return -20000 if tablero.turn else 20000
         
         if tablero.is_stalemate() or tablero.is_insufficient_material():
             return 0
@@ -83,84 +234,62 @@ class AgenteMinimax:
         puntuacion = 0
         
         # Evaluar material y posición
-        for cuadrado in chess.SQUARES:
-            pieza = tablero.piece_at(cuadrado)
-            if pieza is None:
-                continue
+        for cuadro in chess.SQUARES:
+            pieza = tablero.piece_at(cuadro)
+            if pieza is not None:
+                valor = self.valores_piezas[pieza.piece_type]
                 
-            valor = self.valores_piezas[pieza.piece_type]
-            
-            # Bonificaciones posicionales
-            if pieza.piece_type == chess.PAWN:
+                # Añadir valor posicional
+                valor += self._obtener_valor_posicional(pieza, cuadro)
+                
                 if pieza.color == chess.WHITE:
-                    valor += self.tabla_peones[cuadrado]
+                    puntuacion += valor
                 else:
-                    valor += self.tabla_peones[chess.square_mirror(cuadrado)]
-            elif pieza.piece_type == chess.KNIGHT:
-                if pieza.color == chess.WHITE:
-                    valor += self.tabla_caballos[cuadrado]
-                else:
-                    valor += self.tabla_caballos[chess.square_mirror(cuadrado)]
-            
-            # Aplicar signo según color
-            if pieza.color == chess.WHITE:
-                puntuacion += valor
-            else:
-                puntuacion -= valor
+                    puntuacion -= valor
         
         # Bonificaciones adicionales
-        puntuacion += self._evaluar_movilidad(tablero)
-        puntuacion += self._evaluar_seguridad_rey(tablero)
         puntuacion += self._evaluar_estructura_peones(tablero)
+        puntuacion += self._evaluar_seguridad_rey(tablero)
+        puntuacion += self._evaluar_movilidad(tablero)
         
         return puntuacion
     
-    def _evaluar_movilidad(self, tablero: chess.Board) -> float:
-        """Evalúa la movilidad de las piezas."""
-        movimientos_legales = len(list(tablero.legal_moves))
+    def _obtener_valor_posicional(self, pieza: chess.Piece, cuadro: int) -> float:
+        """
+        Obtiene el valor posicional de una pieza en un cuadro específico.
         
-        # Cambiar turno para contar movimientos del oponente
-        tablero.push(chess.Move.null())
-        if tablero.is_valid():
-            movimientos_oponente = len(list(tablero.legal_moves))
-            tablero.pop()
-        else:
-            tablero.pop()
-            movimientos_oponente = 0
+        Args:
+            pieza: Pieza a evaluar
+            cuadro: Cuadro donde está la pieza
+            
+        Returns:
+            Valor posicional
+        """
+        fila = chess.square_rank(cuadro)
+        columna = chess.square_file(cuadro)
         
-        movilidad = movimientos_legales - movimientos_oponente
-        return movilidad * 0.1 if tablero.turn == chess.WHITE else -movilidad * 0.1
-    
-    def _evaluar_seguridad_rey(self, tablero: chess.Board) -> float:
-        """Evalúa la seguridad del rey."""
-        puntuacion = 0
+        if not pieza.color:  # Negras
+            fila = 7 - fila
         
-        # Rey blanco
-        rey_blanco = tablero.king(chess.WHITE)
-        if rey_blanco:
-            if tablero.is_attacked_by(chess.BLACK, rey_blanco):
-                puntuacion -= 50
+        if pieza.piece_type == chess.PAWN:
+            return self.tabla_peones[fila][columna]
+        elif pieza.piece_type == chess.KNIGHT:
+            return self.tabla_caballos[fila][columna]
         
-        # Rey negro
-        rey_negro = tablero.king(chess.BLACK)
-        if rey_negro:
-            if tablero.is_attacked_by(chess.WHITE, rey_negro):
-                puntuacion += 50
-        
-        return puntuacion
+        return 0
     
     def _evaluar_estructura_peones(self, tablero: chess.Board) -> float:
         """Evalúa la estructura de peones."""
         puntuacion = 0
         
         # Peones doblados, aislados, etc.
-        for archivo in range(8):
+        for columna in range(8):
             peones_blancos = 0
             peones_negros = 0
             
             for fila in range(8):
-                cuadrado = chess.square(archivo, fila)
-                pieza = tablero.piece_at(cuadrado)
+                cuadro = chess.square(columna, fila)
+                pieza = tablero.piece_at(cuadro)
                 
                 if pieza and pieza.piece_type == chess.PAWN:
                     if pieza.color == chess.WHITE:
@@ -176,221 +305,167 @@ class AgenteMinimax:
         
         return puntuacion
     
-    def minimax(self, tablero: chess.Board, profundidad: int, alfa: float, beta: float, maximizando: bool) -> Tuple[float, Optional[chess.Move]]:
-        """
-        Implementa el algoritmo Minimax con poda alfa-beta.
+    def _evaluar_seguridad_rey(self, tablero: chess.Board) -> float:
+        """Evalúa la seguridad del rey."""
+        puntuacion = 0
         
-        Args:
-            tablero: Estado actual del tablero
-            profundidad: Profundidad restante de búsqueda
-            alfa: Valor alfa para poda
-            beta: Valor beta para poda
-            maximizando: True si está maximizando, False si minimizando
-            
-        Returns:
-            tuple: (mejor_puntuacion, mejor_movimiento)
-        """
-        self.nodos_evaluados += 1
+        # Bonificar enroque
+        if tablero.has_castling_rights(chess.WHITE):
+            puntuacion += 30
+        if tablero.has_castling_rights(chess.BLACK):
+            puntuacion -= 30
         
-        # Verificar límite de tiempo
-        if time.time() - self.tiempo_inicio > self.tiempo_limite:
-            return self.evaluar_tablero(tablero), None
-        
-        # Condiciones de parada
-        if profundidad == 0 or tablero.is_game_over():
-            return self.evaluar_tablero(tablero), None
-        
-        movimientos = list(tablero.legal_moves)
-        if not movimientos:
-            return self.evaluar_tablero(tablero), None
-        
-        # Ordenar movimientos para mejorar poda (capturas primero)
-        movimientos = self._ordenar_movimientos(tablero, movimientos)
-        
-        mejor_movimiento = None
-        
-        if maximizando:
-            max_eval = float('-inf')
-            for movimiento in movimientos:
-                tablero.push(movimiento)
-                eval_actual, _ = self.minimax(tablero, profundidad - 1, alfa, beta, False)
-                tablero.pop()
-                
-                if eval_actual > max_eval:
-                    max_eval = eval_actual
-                    mejor_movimiento = movimiento
-                
-                alfa = max(alfa, eval_actual)
-                if beta <= alfa:
-                    break  # Poda alfa-beta
-            
-            return max_eval, mejor_movimiento
-        else:
-            min_eval = float('inf')
-            for movimiento in movimientos:
-                tablero.push(movimiento)
-                eval_actual, _ = self.minimax(tablero, profundidad - 1, alfa, beta, True)
-                tablero.pop()
-                
-                if eval_actual < min_eval:
-                    min_eval = eval_actual
-                    mejor_movimiento = movimiento
-                
-                beta = min(beta, eval_actual)
-                if beta <= alfa:
-                    break  # Poda alfa-beta
-            
-            return min_eval, mejor_movimiento
+        return puntuacion
     
-    def _ordenar_movimientos(self, tablero: chess.Board, movimientos: list) -> list:
-        """
-        Ordena los movimientos para mejorar la eficiencia de la poda alfa-beta.
+    def _evaluar_movilidad(self, tablero: chess.Board) -> float:
+        """Evalúa la movilidad de las piezas."""
+        movilidad_blancas = len(list(tablero.legal_moves))
         
-        Args:
-            tablero: Estado actual del tablero
-            movimientos: Lista de movimientos legales
-            
-        Returns:
-            list: Movimientos ordenados por prioridad
-        """
-        def prioridad_movimiento(movimiento):
-            puntuacion = 0
-            
-            # Capturas tienen alta prioridad
-            if tablero.is_capture(movimiento):
-                pieza_capturada = tablero.piece_at(movimiento.to_square)
-                if pieza_capturada:
-                    puntuacion += self.valores_piezas[pieza_capturada.piece_type]
-            
-            # Jaques tienen prioridad
-            tablero.push(movimiento)
-            if tablero.is_check():
-                puntuacion += 50
-            tablero.pop()
-            
-            # Promociones tienen alta prioridad
-            if movimiento.promotion:
-                puntuacion += 800
-            
-            return puntuacion
+        # Cambiar turno temporalmente
+        tablero.push(chess.Move.null())
+        movilidad_negras = len(list(tablero.legal_moves))
+        tablero.pop()
         
-        return sorted(movimientos, key=prioridad_movimiento, reverse=True)
+        return (movilidad_blancas - movilidad_negras) * 0.1
     
-    def seleccionar_movimiento(self, tablero: chess.Board) -> Optional[chess.Move]:
+    def _obtener_tablero_desde_info(self, info: Dict[str, Any]) -> Optional[chess.Board]:
         """
-        Selecciona el mejor movimiento usando Minimax.
+        Intenta obtener el estado del tablero desde la información del entorno.
         
         Args:
-            tablero: Estado actual del tablero
+            info: Información del entorno
             
         Returns:
-            chess.Move: Mejor movimiento encontrado
+            Objeto Board de chess o None si no se puede obtener
         """
-        self.tiempo_inicio = time.time()
-        self.nodos_evaluados = 0
-        
-        logger.info(f"Agente {self.nombre} calculando movimiento...")
-        
         try:
-            # Búsqueda iterativa por profundidad
-            mejor_movimiento = None
+            # Intentar diferentes formas de obtener el tablero
+            if 'board' in info:
+                return info['board']
             
-            for profundidad in range(1, self.profundidad_maxima + 1):
-                if time.time() - self.tiempo_inicio > self.tiempo_limite * 0.8:
-                    break
-                
-                _, movimiento = self.minimax(
-                    tablero, 
-                    profundidad, 
-                    float('-inf'), 
-                    float('inf'), 
-                    tablero.turn == chess.WHITE
-                )
-                
-                if movimiento:
-                    mejor_movimiento = movimiento
-                
-                logger.debug(f"Profundidad {profundidad} completada")
+            if 'fen' in info:
+                return chess.Board(info['fen'])
             
-            tiempo_total = time.time() - self.tiempo_inicio
-            logger.info(f"Movimiento calculado en {tiempo_total:.2f}s, "
-                       f"evaluando {self.nodos_evaluados} nodos")
-            
-            return mejor_movimiento
+            # Si no hay información específica, crear tablero inicial
+            return chess.Board()
             
         except Exception as e:
-            logger.error(f"Error en selección de movimiento: {e}")
-            # Fallback: movimiento aleatorio
-            movimientos = list(tablero.legal_moves)
-            return movimientos[0] if movimientos else None
+            logger.error("Error al obtener tablero desde info: %s", str(e))
+            return None
     
-    def obtener_estadisticas(self) -> dict:
+    def _accion_a_movimiento(self, accion: int, tablero: chess.Board) -> Optional[chess.Move]:
         """
-        Obtiene estadísticas del último cálculo.
+        Convierte una acción numérica a un movimiento de chess.
+        
+        Args:
+            accion: Índice de acción
+            tablero: Estado del tablero
+            
+        Returns:
+            Movimiento correspondiente o None si no es válido
+        """
+        try:
+            movimientos_legales = list(tablero.legal_moves)
+            if 0 <= accion < len(movimientos_legales):
+                return movimientos_legales[accion]
+            return None
+            
+        except Exception as e:
+            logger.error("Error al convertir acción a movimiento: %s", str(e))
+            return None
+    
+    def obtener_estadisticas(self) -> Dict[str, Any]:
+        """
+        Obtiene las estadísticas del agente.
         
         Returns:
-            dict: Estadísticas del agente
+            Diccionario con estadísticas
         """
-        return {
-            'nombre': self.nombre,
-            'profundidad_maxima': self.profundidad_maxima,
-            'nodos_evaluados': self.nodos_evaluados,
-            'tiempo_ultimo_movimiento': time.time() - self.tiempo_inicio if self.tiempo_inicio else 0
+        stats = self.estadisticas.copy()
+        if stats['jugadas_realizadas'] > 0:
+            stats['tiempo_promedio_por_jugada'] = stats['tiempo_total'] / stats['jugadas_realizadas']
+            stats['nodos_promedio_por_jugada'] = stats['nodos_evaluados'] / stats['jugadas_realizadas']
+        else:
+            stats['tiempo_promedio_por_jugada'] = 0
+            stats['nodos_promedio_por_jugada'] = 0
+        
+        return stats
+    
+    def obtener_mejor_jugada(self, tablero: chess.Board) -> chess.Move:
+        """
+        Obtiene la mejor jugada para un tablero de chess directamente.
+        
+        Args:
+            tablero: Tablero de chess
+            
+        Returns:
+            Mejor movimiento encontrado
+        """
+        inicio_tiempo = time.time()
+        
+        try:
+            # Resetear estadísticas para esta jugada
+            self.estadisticas['nodos_evaluados'] = 0
+            self.estadisticas['podas_alfa'] = 0
+            self.estadisticas['podas_beta'] = 0
+            
+            movimientos_legales = list(tablero.legal_moves)
+            
+            if len(movimientos_legales) == 1:
+                # Solo un movimiento legal
+                return movimientos_legales[0]
+            
+            mejor_movimiento = None
+            mejor_valor = float('-inf') if tablero.turn else float('inf')
+            
+            # Evaluar cada movimiento posible
+            for movimiento in movimientos_legales:
+                tablero.push(movimiento)
+                valor = self._minimax(tablero, self.profundidad_maxima - 1, 
+                                    float('-inf'), float('inf'), 
+                                    not tablero.turn, inicio_tiempo)
+                tablero.pop()
+                
+                # Verificar timeout
+                if time.time() - inicio_tiempo > self.tiempo_limite:
+                    logger.warning("Timeout en búsqueda Minimax")
+                    break
+                
+                # Actualizar mejor movimiento
+                if tablero.turn:  # Maximizar para blancas
+                    if valor > mejor_valor:
+                        mejor_valor = valor
+                        mejor_movimiento = movimiento
+                else:  # Minimizar para negras
+                    if valor < mejor_valor:
+                        mejor_valor = valor
+                        mejor_movimiento = movimiento
+            
+            # Actualizar estadísticas
+            tiempo_jugada = time.time() - inicio_tiempo
+            self.estadisticas['tiempo_total'] += tiempo_jugada
+            self.estadisticas['jugadas_realizadas'] += 1
+            
+            logger.debug("Minimax - Mejor jugada: %s, Valor: %.2f, Nodos: %d, Tiempo: %.3fs",
+                        mejor_movimiento.uci() if mejor_movimiento else "None", 
+                        mejor_valor, self.estadisticas['nodos_evaluados'], tiempo_jugada)
+            
+            return mejor_movimiento if mejor_movimiento is not None else movimientos_legales[0]
+            
+        except Exception as e:
+            logger.error("Error en obtener_mejor_jugada Minimax: %s", str(e))
+            return list(tablero.legal_moves)[0] if tablero.legal_moves else None
+    
+    def reiniciar_estadisticas(self):
+        """Reinicia las estadísticas del agente."""
+        self.estadisticas = {
+            'nodos_evaluados': 0,
+            'podas_alfa': 0,
+            'podas_beta': 0,
+            'tiempo_total': 0.0,
+            'jugadas_realizadas': 0
         }
-
-
-def convertir_accion_a_movimiento(accion: int, tablero: chess.Board) -> Optional[chess.Move]:
-    """
-    Convierte una acción numérica en un movimiento de chess.
+        logger.info("Estadísticas de Minimax reiniciadas")
     
-    Args:
-        accion: Índice de la acción
-        tablero: Estado actual del tablero
-        
-    Returns:
-        chess.Move: Movimiento correspondiente o None
-    """
-    try:
-        movimientos = list(tablero.legal_moves)
-        if 0 <= accion < len(movimientos):
-            return movimientos[accion]
-        return None
-    except Exception:
-        return None
-
-
-def convertir_movimiento_a_accion(movimiento: chess.Move, tablero: chess.Board) -> Optional[int]:
-    """
-    Convierte un movimiento de chess en una acción numérica.
-    
-    Args:
-        movimiento: Movimiento de chess
-        tablero: Estado actual del tablero
-        
-    Returns:
-        int: Índice de la acción o None
-    """
-    try:
-        movimientos = list(tablero.legal_moves)
-        return movimientos.index(movimiento)
-    except (ValueError, Exception):
-        return None
-
-
-if __name__ == "__main__":
-    # Prueba del agente Minimax
-    print("Probando agente Minimax...")
-    
-    tablero = chess.Board()
-    agente = AgenteMinimax(profundidad_maxima=3)
-    
-    print("Posición inicial:")
-    print(tablero)
-    
-    movimiento = agente.seleccionar_movimiento(tablero)
-    print(f"Mejor movimiento: {movimiento}")
-    
-    stats = agente.obtener_estadisticas()
-    print(f"Estadísticas: {stats}")
-    
-    print("Prueba completada")
+    def __str__(self) -> str:
+        return f"Minimax(profundidad={self.profundidad_maxima}, tiempo_limite={self.tiempo_limite}s)"
