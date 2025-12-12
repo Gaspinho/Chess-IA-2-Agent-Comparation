@@ -113,6 +113,63 @@ Al finalizar cada partida, se muestra:
 - **Resolución**: Adaptable al tamaño de casilla
 - **Interfaz**: Tiempo real con información detallada
 
+## 🤖 AlphaZero (Implementado)
+
+AlphaZero combina MCTS con redes neuronales profundas para aprendizaje mediante auto-juego:
+
+### Características Principales
+- **Auto-juego**: Genera datos jugando contra sí mismo
+- **Red neuronal**: Evalúa posiciones y guía MCTS
+- **Arquitectura**: Torre residual con cabezas de política y valor
+- **Entrenamiento iterativo**: Mejora continua mediante datos de auto-juego
+
+### Entrenar AlphaZero
+```bash
+# Entrenamiento básico (100 iteraciones)
+python principal.py --entrenar alphazero
+
+# Entrenamiento completo personalizado
+python principal.py --entrenar alphazero \
+    --num-iteraciones 200 \
+    --num-simulaciones 800 \
+    --num-episodios 100 \
+    --batch-size 64 \
+    --learning-rate 0.001 \
+    --temperatura 1.0 \
+    --c-puct 1.5
+```
+
+### Parámetros de AlphaZero
+- `--num-iteraciones`: Ciclos de entrenamiento (default: 100)
+- `--num-simulaciones`: Simulaciones MCTS por jugada (default: 800)
+- `--num-episodios`: Partidas por iteración (default: 100)
+- `--temperatura`: Exploración (1.0 = alta, 0.0 = baja)
+- `--c-puct`: Constante exploración PUCT (default: 1.5)
+- `--batch-size`: Tamaño de batch para entrenamiento (default: 64)
+- `--learning-rate`: Tasa de aprendizaje (default: 0.001)
+
+### Ver AlphaZero Jugar en Pantalla 🎮
+
+Puedes ver a AlphaZero jugando contra otros agentes en tiempo real:
+
+```bash
+# Script interactivo (recomendado)
+python ver_alphazero_jugar.py
+
+# Opciones disponibles:
+# 1. AlphaZero vs Minimax
+# 2. AlphaZero vs MCTS  
+# 3. Minimax vs AlphaZero
+# 4. MCTS vs AlphaZero
+# 5. AlphaZero vs AlphaZero (auto-juego)
+```
+
+**Controles durante la partida:**
+- `ESC` - Salir
+- `SPACE` - Pausar/Reanudar
+
+**Nota:** AlphaZero jugará con red neuronal aleatoria hasta entrenar un modelo. Para mejores resultados, entrena primero con `python principal.py --entrenar alphazero`
+
 ## 📝 Ejemplos de Uso
 
 ### Partida Rápida para Demostración
@@ -178,4 +235,6 @@ pip install -r requerimientos.txt
 - [ ] Múltiples partidas automáticas
 - [ ] Gráficos de estadísticas
 - [ ] Configuración de evaluación heurística
-- [ ] Soporte para otros agentes (DQN, PPO)
+- [ ] Evaluación de AlphaZero vs Minimax/MCTS
+- [ ] Soporte para agente PPO
+- [ ] Interfaz gráfica para AlphaZero

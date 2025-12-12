@@ -19,34 +19,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def entrenar_dqn(args) -> Dict[str, Any]:
-    """Entrena el agente DQN."""
-    logger.info("=== ENTRENANDO AGENTE DQN ===")
+def entrenar_alphazero(args) -> Dict[str, Any]:
+    """Entrena el agente AlphaZero."""
+    logger.info("=== ENTRENANDO AGENTE ALPHAZERO ===")
     
     try:
-        from entrenamiento.entrenar_dqn import entrenar_agente_dqn
+        from entrenamiento.entrenar_alphazero import entrenar_agente_alphazero
         
         config = {
             'learning_rate': args.learning_rate,
-            'buffer_size': args.buffer_size,
+            'num_simulaciones': args.num_simulaciones,
             'batch_size': args.batch_size,
-            'gamma': args.gamma,
-            'total_timesteps': args.timesteps,
+            'num_iteraciones': args.num_iteraciones,
+            'num_episodios': args.num_episodios,
+            'temperatura': args.temperatura,
+            'c_puct': args.c_puct,
             'frecuencia_guardado': args.save_freq,
             'ruta_guardado': 'modelos/'
         }
         
-        resultados = entrenar_agente_dqn(config)
+        resultados = entrenar_agente_alphazero(config)
         
         if resultados.get('entrenamiento_exitoso', False):
-            logger.info("Entrenamiento DQN completado exitosamente")
+            logger.info("Entrenamiento AlphaZero completado exitosamente")
             return resultados
         else:
-            logger.error("Error en entrenamiento DQN: %s", resultados.get('error'))
+            logger.error("Error en entrenamiento AlphaZero: %s", resultados.get('error'))
             return resultados
             
     except Exception as e:
-        logger.error("Error al entrenar DQN: %s", str(e))
+        logger.error("Error al entrenar AlphaZero: %s", str(e))
         return {'entrenamiento_exitoso': False, 'error': str(e)}
 
 
@@ -144,16 +146,16 @@ def crear_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos de uso:
-  python principal.py --entrenar dqn --timesteps 50000
+  python principal.py --entrenar alphazero --num-iteraciones 100
   python principal.py --entrenar ppo --timesteps 100000 --learning-rate 0.0001
   python principal.py --evaluar --timeout 15 --max-moves 300
   python principal.py --reporte
-  python principal.py --entrenar dqn --evaluar --reporte
+  python principal.py --entrenar alphazero --evaluar --reporte
         """
     )
     
     # Argumentos principales
-    parser.add_argument('--entrenar', choices=['dqn', 'ppo'], 
+    parser.add_argument('--entrenar', choices=['alphazero', 'ppo'], 
                        help='Entrenar un agente específico')
     parser.add_argument('--evaluar', action='store_true',
                        help='Evaluar todos los agentes')
@@ -180,10 +182,18 @@ Ejemplos de uso:
     ppo_group.add_argument('--n-epochs', type=int, default=10,
                           help='Número de épocas para PPO (default: 10)')
     
-    # Argumentos específicos para DQN
-    dqn_group = parser.add_argument_group('Parámetros específicos de DQN')
-    dqn_group.add_argument('--buffer-size', type=int, default=50000,
-                          help='Tamaño del buffer para DQN (default: 50000)')
+    # Argumentos específicos para AlphaZero
+    alphazero_group = parser.add_argument_group('Parámetros específicos de AlphaZero')
+    alphazero_group.add_argument('--num-simulaciones', type=int, default=800,
+                          help='Número de simulaciones MCTS para AlphaZero (default: 800)')
+    alphazero_group.add_argument('--num-iteraciones', type=int, default=100,
+                          help='Número de iteraciones de auto-juego (default: 100)')
+    alphazero_group.add_argument('--num-episodios', type=int, default=100,
+                          help='Episodios por iteración (default: 100)')
+    alphazero_group.add_argument('--temperatura', type=float, default=1.0,
+                          help='Temperatura para exploración (default: 1.0)')
+    alphazero_group.add_argument('--c-puct', type=float, default=1.5,
+                          help='Constante de exploración PUCT (default: 1.5)')
     
     # Argumentos de evaluación
     eval_group = parser.add_argument_group('Parámetros de evaluación')
@@ -266,8 +276,8 @@ def main():
     
     # Ejecutar entrenamiento si se especifica
     if args.entrenar:
-        if args.entrenar == 'dqn':
-            resultado = entrenar_dqn(args)
+        if args.entrenar == 'alphazero':
+            resultado = entrenar_alphazero(args)
             exitos.append(resultado.get('entrenamiento_exitoso', False))
         elif args.entrenar == 'ppo':
             resultado = entrenar_ppo(args)

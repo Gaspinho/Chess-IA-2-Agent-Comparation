@@ -6,7 +6,7 @@ Este proyecto implementa cuatro tipos diferentes de agentes de ajedrez y proporc
 
 - 🤖 **Minimax** - Búsqueda con poda alfa-beta
 - 🎯 **MCTS** - Monte Carlo Tree Search  
-- 🧠 **DQN** - Deep Q-Network (Aprendizaje por Refuerzo)
+- 🧠 **AlphaZero** - MCTS + Redes Neuronales Profundas (Auto-juego)
 - 🚀 **PPO** - Proximal Policy Optimization (Aprendizaje por Refuerzo)
 
 ## 🚀 Características
@@ -26,12 +26,12 @@ Chess-IA-2-Agent-Comparation/
 ├── agentes/                 # Implementaciones de agentes
 │   ├── agente_minimax.py   # Minimax con poda alfa-beta
 │   ├── agente_mcts.py      # Monte Carlo Tree Search
-│   ├── agente_dqn.py       # Deep Q-Network
+│   ├── agente_alphazero.py # AlphaZero (MCTS + Deep Learning)
 │   └── agente_ppo.py       # Proximal Policy Optimization
 ├── entorno/                # Wrapper del entorno de ajedrez
 │   └── entorno_ajedrez.py  # Interfaz unificada con PettingZoo
 ├── entrenamiento/          # Scripts de entrenamiento y evaluación
-│   ├── entrenar_dqn.py     # Entrenamiento DQN
+│   ├── entrenar_alphazero.py # Entrenamiento AlphaZero
 │   ├── entrenar_ppo.py     # Entrenamiento PPO
 │   └── evaluar_agentes.py  # Sistema de evaluación
 ├── analisis/               # Análisis y reportes
