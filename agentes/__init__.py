@@ -1,19 +1,21 @@
 """
 Módulo agentes - Implementaciones de diferentes agentes de ajedrez.
 
-Este módulo contiene las implementaciones de diferentes tipos de agentes:
+Este módulo contiene las implementaciones de cuatro tipos de agentes:
 - Minimax: Agente de búsqueda con poda alfa-beta
 - MCTS: Agente Monte Carlo Tree Search  
-- AlphaZero: Agente con MCTS + Redes Neuronales
-- PPO: Agente Proximal Policy Optimization (futuro)
+- DQN: Agente Deep Q-Network
+- PPO: Agente Proximal Policy Optimization
 """
 
 from .agente_minimax import AgenteMinimax
 from .agente_mcts import AgenteMCTS
-from .agente_alphazero import AgenteAlphaZero
+#from .agente_dqn import AgenteDQN
+from .agente_ppo import AgentePPO
 
 __all__ = [
     'AgenteMinimax',
-    'AgenteMCTS',
-    'AgenteAlphaZero'
+    'AgenteMCTS', 
+    'AgenteDQN',
+    'AgentePPO'
 ]
