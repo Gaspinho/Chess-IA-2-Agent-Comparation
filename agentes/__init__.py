@@ -10,7 +10,7 @@ Este módulo contiene las implementaciones de cuatro tipos de agentes:
 
 from .agente_minimax import AgenteMinimax
 from .agente_mcts import AgenteMCTS
-from .agente_dqn import AgenteDQN
+#from .agente_dqn import AgenteDQN
 from .agente_ppo import AgentePPO
 
 __all__ = [
