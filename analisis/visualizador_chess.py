@@ -58,7 +58,7 @@ class VisualizadorAjedrez:
         pygame.display.set_caption("Chess AI Visualizer - Minimax vs MCTS")
         
         # Fuentes
-        self.fuente_grande = pygame.font.Font(None, 24)
+        self.fuente_grande = pygame.font.SysFont("segoeui symbol", 40)
         self.fuente_mediana = pygame.font.Font(None, 20)
         self.fuente_pequeña = pygame.font.Font(None, 16)
         
