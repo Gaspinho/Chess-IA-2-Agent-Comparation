@@ -1,0 +1,117 @@
+{
+  "configuracion": {
+    "num_partidas": 10,
+    "num_simulaciones_alphazero": 400,
+    "modelo_alphazero": "No cargado",
+    "modelo_ppo": "No cargado"
+  },
+  "resumen": {
+    "total_partidas": 10,
+    "victorias_alphazero": 1,
+    "victorias_ppo": 1,
+    "empates": 8,
+    "tiempo_total": 0.5396029949188232
+  },
+  "partidas": [
+    {
+      "numero": 1,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.07898068428039551,
+      "tiempo_blancas": 0.008118629455566406,
+      "tiempo_negras": 0.047788381576538086
+    },
+    {
+      "numero": 2,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.06161141395568848,
+      "tiempo_blancas": 0.029773473739624023,
+      "tiempo_negras": 0.008187055587768555
+    },
+    {
+      "numero": 3,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.05986738204956055,
+      "tiempo_blancas": 0.007365703582763672,
+      "tiempo_negras": 0.029814720153808594
+    },
+    {
+      "numero": 4,
+      "ganador": "AlphaZero",
+      "resultado_tablero": "0-1",
+      "tipo_fin": "jaque_mate",
+      "num_jugadas": 134,
+      "tiempo_total": 0.04709219932556152,
+      "tiempo_blancas": 0.023400068283081055,
+      "tiempo_negras": 0.006426334381103516
+    },
+    {
+      "numero": 5,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.054361820220947266,
+      "tiempo_blancas": 0.007082700729370117,
+      "tiempo_negras": 0.0272672176361084
+    },
+    {
+      "numero": 6,
+      "ganador": "PPO",
+      "resultado_tablero": "1-0",
+      "tipo_fin": "jaque_mate",
+      "num_jugadas": 15,
+      "tiempo_total": 0.005735158920288086,
+      "tiempo_blancas": 0.002965211868286133,
+      "tiempo_negras": 0.0006883144378662109
+    },
+    {
+      "numero": 7,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.05656695365905762,
+      "tiempo_blancas": 0.00734710693359375,
+      "tiempo_negras": 0.028084754943847656
+    },
+    {
+      "numero": 8,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.05347633361816406,
+      "tiempo_blancas": 0.026109933853149414,
+      "tiempo_negras": 0.00690460205078125
+    },
+    {
+      "numero": 9,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.0630183219909668,
+      "tiempo_blancas": 0.007574319839477539,
+      "tiempo_negras": 0.02990269660949707
+    },
+    {
+      "numero": 10,
+      "ganador": "Empate",
+      "resultado_tablero": "*",
+      "tipo_fin": "otro",
+      "num_jugadas": 150,
+      "tiempo_total": 0.05322885513305664,
+      "tiempo_blancas": 0.027263164520263672,
+      "tiempo_negras": 0.007048845291137695
+    }
+  ]
+}

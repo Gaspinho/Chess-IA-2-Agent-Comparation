@@ -531,8 +531,14 @@ class AgenteAlphaZero:
             Tablero o None si no se puede obtener
         """
         try:
+            # Primero intentar obtener tablero directamente
+            if 'tablero' in info and isinstance(info['tablero'], chess.Board):
+                return info['tablero'].copy()
+            
+            # Fallback: intentar desde legal_moves (compatible con versión anterior)
             if 'legal_moves' in info and hasattr(info['legal_moves'], 'board'):
                 return info['legal_moves'].board.copy()
+            
             return None
         except Exception as e:
             logger.debug("No se pudo obtener tablero desde info: %s", str(e))

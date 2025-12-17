@@ -156,7 +156,7 @@ class AgentePPO:
             verbose=0,  # Cambiar a 0 para menos output
             device=self.device,
             policy_kwargs=dict(
-                net_arch=[dict(pi=[128, 128], vf=[128, 128])]  # Redes más pequeñas para chess
+                net_arch=dict(pi=[128, 128], vf=[128, 128])  # Redes más pequeñas para chess
             )
         )
         
