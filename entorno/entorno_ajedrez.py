@@ -1,15 +1,15 @@
 """
-Módulo para envolver el entorno de ajedrez de PettingZoo.
+Módulo para el entorno de ajedrez sin dependencias de pygame.
 
 Este módulo proporciona una interfaz unificada para que tanto agentes de 
 búsqueda como de aprendizaje por refuerzo puedan interactuar con el 
-entorno de ajedrez de PettingZoo.
+entorno de ajedrez usando python-chess directamente.
 """
 
 import logging
 import numpy as np
-import pettingzoo.classic.chess_v6 as chess_v6
-from typing import Optional, Tuple, Dict, Any
+import chess
+from typing import Optional, Tuple, Dict, Any, List
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 class EntornoAjedrez:
     """
-    Envuelve el entorno de ajedrez de PettingZoo para una interfaz unificada.
+    Entorno de ajedrez sin dependencias de pygame.
     
     Esta clase proporciona métodos estándar que pueden ser utilizados tanto
-    por agentes de búsqueda (Minimax, MCTS) como por agentes de RL (DQN, PPO).
+    por agentes de búsqueda (Minimax, MCTS) como por agentes de RL (PPO).
+    Usa python-chess directamente sin PettingZoo.
     """
     
     def __init__(self, render_mode: Optional[str] = None):
@@ -29,46 +30,48 @@ class EntornoAjedrez:
         Inicializa el entorno de ajedrez.
         
         Args:
-            render_mode: Modo de renderizado ('human', 'rgb_array', None)
+            render_mode: Modo de renderizado (no usado, pero mantenido por compatibilidad)
         """
         self.render_mode = render_mode
-        self.env = None
-        self.agentes = None
+        self.tablero = None
+        self.agentes = ["player_0", "player_1"]  # Blancas y negras
         self.agente_actual = None
         self.observacion_actual = None
-        self.recompensa_actual = None
+        self.recompensa_actual = 0.0
         self.terminado = False
-        self.info_actual = None
+        self.info_actual = {}
         self.historial_jugadas = []
+        self._movimientos_legales_cache = []
         
-        logger.info("EntornoAjedrez inicializado")
+        logger.info("EntornoAjedrez inicializado (sin pygame)")
     
     def reiniciar(self) -> np.ndarray:
         """
         Reinicia el entorno de ajedrez.
         
         Returns:
-            Observación inicial del primer jugador
+            Observación inicial del primer jugador (representación del tablero)
         """
         try:
-            # Crear nuevo entorno
-            self.env = chess_v6.env(render_mode=self.render_mode)
-            self.env.reset()
-            
-            # Obtener lista de agentes
-            self.agentes = self.env.agents
-            self.agente_actual = self.agentes[0]  # Comenzar con blancas
-            
-            # Obtener observación inicial
-            self.observacion_actual, self.recompensa_actual, \
-            self.terminado, truncado, self.info_actual = self.env.last()
-            
-            # Limpiar historial
+            # Crear nuevo tablero
+            self.tablero = chess.Board()
+            self.agente_actual = "player_0"  # Comenzar con blancas
+            self.terminado = False
+            self.recompensa_actual = 0.0
             self.historial_jugadas = []
+            self._movimientos_legales_cache = list(self.tablero.legal_moves)
+            
+            # Crear observación
+            self.observacion_actual = self._tablero_a_observacion()
+            self.info_actual = {
+                'tablero': self.tablero,
+                'turno': self.tablero.turn,
+                'jugadas_legales': len(self._movimientos_legales_cache)
+            }
             
             logger.info("Entorno reiniciado - Inicia jugador: %s", self.agente_actual)
             
-            return self._normalizar_observacion(self.observacion_actual)
+            return self.observacion_actual
             
         except Exception as e:
             logger.error("Error al reiniciar el entorno: %s", str(e))
@@ -79,256 +82,187 @@ class EntornoAjedrez:
         Ejecuta una acción en el entorno.
         
         Args:
-            accion: Acción a ejecutar (índice de movimiento)
+            accion: Índice del movimiento en la lista de movimientos legales
             
         Returns:
             Tupla con (observación, recompensa, terminado, info)
         """
         try:
-            if self.env is None:
+            if self.tablero is None:
                 raise ValueError("El entorno no ha sido inicializado. Llamar reiniciar() primero.")
             
             if self.terminado:
                 logger.warning("Intento de ejecutar acción en entorno terminado")
                 return self.observacion_actual, 0.0, True, self.info_actual
             
-            # Ejecutar acción
-            self.env.step(accion)
+            # Obtener movimientos legales actuales
+            movimientos_legales = self._movimientos_legales_cache
             
-            # Obtener nueva observación
-            self.observacion_actual, self.recompensa_actual, \
-            self.terminado, truncado, self.info_actual = self.env.last()
+            if accion >= len(movimientos_legales):
+                logger.error(f"Acción inválida: {accion} >= {len(movimientos_legales)}")
+                return self.observacion_actual, -10.0, True, self.info_actual
             
-            # Registrar jugada
-            self.historial_jugadas.append({
-                'agente': self.agente_actual,
-                'accion': accion,
-                'recompensa': self.recompensa_actual
-            })
+            # Ejecutar movimiento
+            movimiento = movimientos_legales[accion]
+            self.tablero.push(movimiento)
+            self.historial_jugadas.append(movimiento)
             
-            # Cambiar al siguiente agente si no ha terminado
-            if not self.terminado and not truncado:
-                idx_actual = self.agentes.index(self.agente_actual)
-                self.agente_actual = self.agentes[(idx_actual + 1) % len(self.agentes)]
+            # Verificar estado del juego
+            self.terminado = self.tablero.is_game_over()
             
-            logger.debug("Paso ejecutado - Acción: %d, Recompensa: %.2f, Terminado: %s", 
-                        accion, self.recompensa_actual, self.terminado)
+            # Calcular recompensa
+            if self.terminado:
+                resultado = self.tablero.result()
+                if resultado == "1-0":  # Blancas ganan
+                    self.recompensa_actual = 1.0 if self.agente_actual == "player_0" else -1.0
+                elif resultado == "0-1":  # Negras ganan
+                    self.recompensa_actual = 1.0 if self.agente_actual == "player_1" else -1.0
+                else:  # Empate
+                    self.recompensa_actual = 0.0
+            else:
+                self.recompensa_actual = 0.0
             
-            return (
-                self._normalizar_observacion(self.observacion_actual),
-                self._normalizar_recompensa(self.recompensa_actual),
-                self.terminado or truncado,
-                self.info_actual
-            )
+            # Cambiar turno
+            self.agente_actual = "player_1" if self.agente_actual == "player_0" else "player_0"
+            
+            # Actualizar cache de movimientos legales
+            self._movimientos_legales_cache = list(self.tablero.legal_moves)
+            
+            # Crear nueva observación
+            self.observacion_actual = self._tablero_a_observacion()
+            
+            # Actualizar info
+            self.info_actual = {
+                'tablero': self.tablero,
+                'turno': self.tablero.turn,
+                'jugadas_legales': len(self._movimientos_legales_cache),
+                'ultimo_movimiento': movimiento,
+                'es_jaque': self.tablero.is_check(),
+                'es_jaque_mate': self.tablero.is_checkmate()
+            }
+            
+            logger.debug("Paso ejecutado - Movimiento: %s, Recompensa: %.2f, Terminado: %s", 
+                        movimiento, self.recompensa_actual, self.terminado)
+            
+            return (self.observacion_actual, 
+                   self.recompensa_actual, 
+                   self.terminado, 
+                   self.info_actual)
             
         except Exception as e:
-            logger.error("Error en paso del entorno: %s", str(e))
+            logger.error("Error al ejecutar paso: %s", str(e))
             raise
+    
+    def _tablero_a_observacion(self) -> np.ndarray:
+        """
+        Convierte el tablero de chess a una representación numpy.
+        
+        Returns:
+            Array numpy con representación del tablero (8x8x12)
+            12 canales: 6 tipos de piezas x 2 colores
+        """
+        # Crear observación con 12 canales (6 piezas x 2 colores)
+        obs = np.zeros((8, 8, 12), dtype=np.float32)
+        
+        # Mapeo de piezas a índices
+        piece_to_idx = {
+            chess.PAWN: 0,
+            chess.KNIGHT: 1,
+            chess.BISHOP: 2,
+            chess.ROOK: 3,
+            chess.QUEEN: 4,
+            chess.KING: 5
+        }
+        
+        for square in chess.SQUARES:
+            piece = self.tablero.piece_at(square)
+            if piece is not None:
+                row = square // 8
+                col = square % 8
+                piece_idx = piece_to_idx[piece.piece_type]
+                # Blancas en canales 0-5, negras en canales 6-11
+                channel = piece_idx if piece.color == chess.WHITE else piece_idx + 6
+                obs[row, col, channel] = 1.0
+        
+        return obs
     
     def obtener_acciones_legales(self) -> np.ndarray:
         """
         Obtiene las acciones legales para el jugador actual.
         
         Returns:
-            Array con las acciones legales disponibles
+            Array con índices de acciones legales (índices en la lista de movimientos)
         """
         try:
-            if self.env is None or self.terminado:
-                return np.array([])
+            if self.tablero is None or self.terminado:
+                return np.array([], dtype=np.int32)
             
-            # Obtener máscara de acciones legales
-            mascara_acciones = self.info_actual.get('action_mask', None)
-            if mascara_acciones is not None:
-                acciones_legales = np.where(mascara_acciones)[0]
-            else:
-                # Fallback: todas las acciones posibles
-                # Verificar si action_space es una función o tiene el atributo n
-                if hasattr(self.env.action_space, 'n'):
-                    num_acciones = self.env.action_space.n
-                elif callable(self.env.action_space):
-                    # Si es una función, llamarla para obtener el espacio con el agente actual
-                    if self.agente_actual:
-                        action_space = self.env.action_space(self.agente_actual)
-                    else:
-                        # Si no hay agente actual, usar el primer agente disponible
-                        action_space = self.env.action_space(self.agentes[0] if self.agentes else 'player_0')
-                    num_acciones = action_space.n if hasattr(action_space, 'n') else 4096  # Default para chess
-                else:
-                    # Default para ajedrez (chess_v6 típicamente tiene 4096 acciones)
-                    num_acciones = 4096
-                acciones_legales = np.arange(num_acciones)
+            # Retornar índices de los movimientos legales
+            num_movimientos = len(self._movimientos_legales_cache)
+            acciones_legales = np.arange(num_movimientos, dtype=np.int32)
             
             return acciones_legales
             
         except Exception as e:
             logger.error("Error al obtener acciones legales: %s", str(e))
-            return np.array([])
+            return np.array([], dtype=np.int32)
     
-    def renderizar(self) -> Optional[np.ndarray]:
+    def obtener_tablero(self) -> chess.Board:
         """
-        Renderiza el estado actual del entorno.
+        Obtiene el tablero de chess actual.
         
         Returns:
-            Array de imagen si render_mode='rgb_array', None en caso contrario
+            Objeto chess.Board
         """
-        try:
-            if self.env is not None:
-                return self.env.render()
-            return None
-            
-        except Exception as e:
-            logger.error("Error al renderizar: %s", str(e))
-            return None
+        return self.tablero
+    
+    def obtener_movimientos_legales(self) -> List[chess.Move]:
+        """
+        Obtiene la lista de movimientos legales del tablero.
+        
+        Returns:
+            Lista de objetos chess.Move
+        """
+        return self._movimientos_legales_cache
+    
+    def renderizar(self):
+        """Renderiza el estado actual del entorno (imprime el tablero)."""
+        if self.tablero is not None:
+            print(self.tablero)
+            print(f"\nTurno: {'Blancas' if self.tablero.turn else 'Negras'}")
+            print(f"Movimientos legales: {len(self._movimientos_legales_cache)}")
     
     def cerrar(self):
         """Cierra el entorno y libera recursos."""
-        try:
-            if self.env is not None:
-                self.env.close()
-                self.env = None
-                logger.info("Entorno cerrado")
-                
-        except Exception as e:
-            logger.error("Error al cerrar entorno: %s", str(e))
+        self.tablero = None
+        self.agente_actual = None
+        logger.info("Entorno cerrado correctamente")
     
-    def _normalizar_observacion(self, observacion) -> np.ndarray:
+    def obtener_estado_juego(self) -> Dict[str, Any]:
         """
-        Normaliza la observación para mejorar el entrenamiento.
-        
-        Args:
-            observacion: Observación raw del entorno (puede ser dict o array)
-            
-        Returns:
-            Observación normalizada
-        """
-        if observacion is None:
-            return np.zeros((8, 8, 111))  # Tamaño estándar para chess_v6
-        
-        # Manejar diferentes tipos de observación
-        if isinstance(observacion, dict):
-            # Si es un diccionario, buscar la observación principal
-            if 'observation' in observacion:
-                obs_array = observacion['observation']
-            elif 'obs' in observacion:
-                obs_array = observacion['obs']
-            else:
-                # Si no hay una clave estándar, tomar la primera entrada que sea un array
-                for key, value in observacion.items():
-                    if isinstance(value, np.ndarray):
-                        obs_array = value
-                        break
-                else:
-                    # Si no encontramos un array, crear uno por defecto
-                    logger.warning("No se encontró observación válida en el diccionario, usando observación por defecto")
-                    return np.zeros((8, 8, 111))
-        else:
-            # Si ya es un array, usarlo directamente
-            obs_array = observacion
-        
-        # Asegurar que sea un array de NumPy
-        if not isinstance(obs_array, np.ndarray):
-            obs_array = np.array(obs_array)
-        
-        # La observación ya viene normalizada en chess_v6
-        return obs_array.astype(np.float32)
-    
-    def _normalizar_recompensa(self, recompensa: float) -> float:
-        """
-        Normaliza la recompensa.
-        
-        Args:
-            recompensa: Recompensa raw del entorno
-            
-        Returns:
-            Recompensa normalizada
-        """
-        # Las recompensas en chess_v5 ya están en rango [-1, 1]
-        return float(recompensa)
-    
-    @property
-    def espacio_observacion(self):
-        """Retorna el espacio de observación del entorno."""
-        if self.env is not None:
-            if hasattr(self.env, 'observation_space'):
-                if callable(self.env.observation_space):
-                    # Usar el agente actual o el primer agente disponible
-                    agente = self.agente_actual if self.agente_actual else (self.agentes[0] if self.agentes else 'player_0')
-                    return self.env.observation_space(agente)
-                else:
-                    return self.env.observation_space
-        return None
-    
-    @property
-    def espacio_accion(self):
-        """Retorna el espacio de acción del entorno."""
-        if self.env is not None:
-            if hasattr(self.env, 'action_space'):
-                if callable(self.env.action_space):
-                    # Usar el agente actual o el primer agente disponible
-                    agente = self.agente_actual if self.agente_actual else (self.agentes[0] if self.agentes else 'player_0')
-                    return self.env.action_space(agente)
-                else:
-                    return self.env.action_space
-        return None
-    
-    @property
-    def es_terminado(self) -> bool:
-        """Retorna True si el entorno ha terminado."""
-        return self.terminado
-    
-    @property
-    def jugador_actual(self) -> str:
-        """Retorna el identificador del jugador actual."""
-        return self.agente_actual
-    
-    def obtener_resultado(self) -> Dict[str, Any]:
-        """
-        Obtiene el resultado final del juego.
+        Obtiene el estado completo del juego.
         
         Returns:
-            Diccionario con información del resultado
+            Diccionario con información del estado del juego
         """
-        if not self.terminado:
-            return {
-                'estado': 'en_progreso',
-                'ganador': None,
-                'tipo_fin': 'en_progreso',
-                'total_jugadas': len(self.historial_jugadas)
-            }
+        if self.tablero is None:
+            return {'error': 'Tablero no inicializado'}
         
-        # Determinar ganador basado en las recompensas finales
-        resultado = {
-            'estado': 'terminado',
-            'ganador': None,
-            'tipo_fin': 'desconocido',
-            'total_jugadas': len(self.historial_jugadas)
+        return {
+            'fen': self.tablero.fen(),
+            'turno': 'Blancas' if self.tablero.turn == chess.WHITE else 'Negras',
+            'es_jaque': self.tablero.is_check(),
+            'es_jaque_mate': self.tablero.is_checkmate(),
+            'es_ahogado': self.tablero.is_stalemate(),
+            'material_insuficiente': self.tablero.is_insufficient_material(),
+            'es_repeticion': self.tablero.is_repetition(),
+            'jugadas_realizadas': len(self.historial_jugadas),
+            'jugadas_legales': len(self._movimientos_legales_cache),
+            'resultado': self.tablero.result() if self.tablero.is_game_over() else None
         }
-        
-        if self.recompensa_actual == 1:
-            resultado['ganador'] = self.agente_actual
-            resultado['tipo_fin'] = 'victoria'
-        elif self.recompensa_actual == -1:
-            # El oponente ganó
-            idx_actual = self.agentes.index(self.agente_actual)
-            resultado['ganador'] = self.agentes[(idx_actual + 1) % len(self.agentes)]
-            resultado['tipo_fin'] = 'derrota'
-        else:
-            resultado['tipo_fin'] = 'empate'
-        
-        return resultado
     
-    def obtener_estado_tablero(self) -> str:
-        """
-        Obtiene representación en string del estado del tablero.
-        
-        Returns:
-            String representando el estado del tablero
-        """
-        try:
-            if hasattr(self.env, 'board'):
-                return str(self.env.board)
-            return "Estado del tablero no disponible"
-            
-        except Exception as e:
-            logger.error("Error al obtener estado del tablero: %s", str(e))
-            return "Error al obtener estado"
+    def __repr__(self) -> str:
+        """Representación en string del entorno."""
+        if self.tablero is None:
+            return "EntornoAjedrez(no inicializado)"
+        return f"EntornoAjedrez(turno={'Blancas' if self.tablero.turn else 'Negras'}, jugadas={len(self.historial_jugadas)})"
