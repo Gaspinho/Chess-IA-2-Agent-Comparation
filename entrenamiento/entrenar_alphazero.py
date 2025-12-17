@@ -175,12 +175,15 @@ class EntrenadorAlphaZero:
                 logger.error("Error en episodio %d: %s", episodio, str(e))
                 continue
             
-            # Obtener resultado de la partida
-            resultado = self._evaluar_resultado(estados_partida[-1])
+            # Obtener resultado de la partida desde perspectiva de blancas
+            turno_inicial = chess.WHITE
+            resultado = self._evaluar_resultado(estados_partida[-1], tablero_final, turno_inicial)
             
-            # Agregar datos con el resultado
-            for estado, politica in zip(estados_partida, politicas_partida):
-                datos.append((estado, politica, resultado))
+            # Agregar datos con el resultado (alternando perspectiva por turno)
+            for idx, (estado, politica) in enumerate(zip(estados_partida, politicas_partida)):
+                # Alternar signo según el turno (jugada par=blancas, impar=negras)
+                resultado_turno = resultado if idx % 2 == 0 else -resultado
+                datos.append((estado, politica, resultado_turno))
             
             if (episodio + 1) % 10 == 0:
                 logger.debug("Episodios completados: %d/%d", episodio + 1, self.num_episodios)
@@ -342,11 +345,29 @@ class EntrenadorAlphaZero:
         
         return politica
     
-    def _evaluar_resultado(self, estado_final: np.ndarray) -> float:
-        """Evalúa el resultado de una partida."""
-        # Simplificado: retornar resultado aleatorio
-        # En implementación real, extraer del tablero final
-        return random.choice([-1.0, 0.0, 1.0])
+    def _evaluar_resultado(self, estado_final: np.ndarray, tablero_final: chess.Board, turno_inicial: chess.Color) -> float:
+        """Evalúa el resultado de una partida desde la perspectiva del turno inicial.
+        
+        Args:
+            estado_final: Estado final (no usado, para compatibilidad)
+            tablero_final: Tablero al final de la partida
+            turno_inicial: Color que inició la partida
+            
+        Returns:
+            Resultado: 1.0 si ganó turno_inicial, -1.0 si perdió, 0.0 empate
+        """
+        if not tablero_final.is_game_over():
+            # Si no terminó, considerar empate
+            return 0.0
+        
+        resultado = tablero_final.result()
+        
+        if resultado == "1-0":  # Blancas ganan
+            return 1.0 if turno_inicial == chess.WHITE else -1.0
+        elif resultado == "0-1":  # Negras ganan
+            return 1.0 if turno_inicial == chess.BLACK else -1.0
+        else:  # Empate ("1/2-1/2" o "*")
+            return 0.0
     
     def _entrenar_red(self) -> List[float]:
         """

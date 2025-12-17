@@ -492,12 +492,22 @@ class AgenteAlphaZero:
         if len(movimientos_legales) == 0:
             return probabilidades
         
-        # Mapeo simplificado: asignar probabilidades uniformes
-        # En una implementación completa, se usaría el mapeo exacto de AlphaZero
+        # Mapeo mejorado con soporte básico para promociones
         prob_total = 0.0
         for movimiento in movimientos_legales:
-            # Índice simplificado basado en from_square y to_square
+            # Índice base: from_square * 64 + to_square
             idx = movimiento.from_square * 64 + movimiento.to_square
+            
+            # Ajustar índice para promociones (offset adicional)
+            if movimiento.promotion is not None:
+                # Offset para promociones: +4096 base, +tipo_pieza
+                offset_promocion = 4096
+                tipo_offset = {
+                    chess.QUEEN: 0, chess.ROOK: 1, 
+                    chess.BISHOP: 2, chess.KNIGHT: 3
+                }.get(movimiento.promotion, 0)
+                idx = offset_promocion + movimiento.from_square * 4 + tipo_offset
+            
             idx = min(idx, len(politica) - 1)
             prob = max(politica[idx], 1e-8)
             probabilidades[movimiento] = prob
